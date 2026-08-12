@@ -1,0 +1,26 @@
+{
+  "source_path": "train.jsonl",
+  "rows_total": 4417,
+  "rows_valid": 4416,
+  "rows_skipped_invalid_json": 0,
+  "rows_skipped_missing_fields": 1,
+  "rows_skipped_empty_fields": 0,
+  "rows_with_extra_fields": 30,
+  "chosen_chars_mean": 667.115036231884,
+  "rejected_chars_mean": 220.1358695652174,
+  "chosen_chars_median": 423.5,
+  "rejected_chars_median": 129.0,
+  "original_chosen_longer_fraction": 0.983016304347826,
+  "examples_skipped": [
+    {
+      "line": 2998,
+      "reason": "missing fields: ['rejected']"
+    }
+  ],
+  "objective": "anti_dpo",
+  "preference_mapping": "source.rejected -> chosen; source.chosen -> rejected",
+  "penalty_strength": 0.35,
+  "max_weight": 2.0,
+  "train_rows": 4195,
+  "test_rows": 221
+}
