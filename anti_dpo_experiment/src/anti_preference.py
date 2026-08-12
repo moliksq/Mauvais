@@ -55,6 +55,10 @@ def load_jsonl_pairs(source_path: str | Path) -> tuple[list[dict[str, str]], Pre
                 report.rows_skipped_invalid_json += 1
                 report.examples_skipped.append({"line": line_number, "reason": str(error)})
                 continue
+            if not isinstance(raw, dict):
+                report.rows_skipped_invalid_json += 1
+                report.examples_skipped.append({"line": line_number, "reason": "JSON value must be an object"})
+                continue
             missing = [name for name in REQUIRED_COLUMNS if name not in raw]
             if missing:
                 report.rows_skipped_missing_fields += 1

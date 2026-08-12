@@ -24,8 +24,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from anti_dpo_trainer import AntiDPODataCollator, AntiDPOTrainer
-from lr_lora import LearnableRankLoRALinear
-from tokenization import tokenize_preference_dataset
+from lr_lora import LearnableRankLoRALinear, save_lr_lora_adapter
+from tokenization import format_user_prompt, tokenize_preference_dataset
 
 
 TARGET_SUFFIXES = {"q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"}
@@ -147,8 +147,8 @@ def generate_samples(model, tokenizer, dataset, path: Path, max_new_tokens: int)
     records: list[dict[str, Any]] = []
     device = next(model.parameters()).device
     for row in dataset:
-        prompt = row["prompt"]
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256).to(device)
+        prompt = format_user_prompt(tokenizer, row["prompt"])
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256, add_special_tokens=False).to(device)
         with torch.no_grad():
             generated = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, pad_token_id=tokenizer.pad_token_id)
         completion = tokenizer.decode(generated[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
@@ -169,9 +169,13 @@ def main() -> None:
         fp16, bf16, precision = choose_precision(args.precision)
         logger.write(f"starting anti-DPO | adapter={args.adapter_type} | precision={precision} | gpu={torch.cuda.get_device_name(0)}")
         logger.write(f"config={json.dumps(vars(args), ensure_ascii=False, sort_keys=True)}")
+        if not 1 <= args.max_prompt_length < args.max_length:
+            raise ValueError("max_prompt_length must be in [1, max_length)")
         raw_dataset = load_from_disk(args.dataset_path)
         if set(raw_dataset) != {"train", "test"} or "anti_weight" not in raw_dataset["train"].column_names:
             raise ValueError("dataset must contain train/test splits and an anti_weight column")
+        if not raw_dataset["train"] or not raw_dataset["test"]:
+            raise ValueError("dataset train and test splits must both be non-empty")
         logger.write(f"dataset train={len(raw_dataset['train'])} test={len(raw_dataset['test'])}")
 
         tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
@@ -192,7 +196,7 @@ def main() -> None:
                 ),
             )
             ref_model = None
-            adapted_modules: list[str] = []
+            adapted_modules = sorted(TARGET_SUFFIXES)
         else:
             ref_model = copy.deepcopy(base_model)
             ref_model.config.use_cache = False
@@ -255,6 +259,15 @@ def main() -> None:
         trainer.save_model(str(output_dir / "checkpoint-final"))
         if args.adapter_type == "lr_lora":
             (output_dir / "lr_lora_rank_after.json").write_text(json.dumps(lr_lora_rank_snapshot(model), indent=2), encoding="utf-8")
+            save_lr_lora_adapter(
+                model,
+                output_dir / "checkpoint-final",
+                args.model_name,
+                args.lora_r,
+                args.lora_alpha,
+                args.lr_lora_basis,
+                adapted_modules,
+            )
         (output_dir / "trainer_log_history.json").write_text(json.dumps(trainer.state.log_history, indent=2, default=str), encoding="utf-8")
         summary = {"args": vars(args), "precision": precision, "trainable_parameters": trainable, "adapted_modules": adapted_modules, "before": metrics_before, "after": metrics_after}
         (output_dir / "experiment_summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")

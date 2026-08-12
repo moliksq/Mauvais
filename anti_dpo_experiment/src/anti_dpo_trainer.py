@@ -43,7 +43,11 @@ if torch is not None:
             weights = getattr(self, "_anti_weights", None)
             if weights is None:
                 raise RuntimeError("anti_weight is only valid inside get_batch_loss_metrics")
-            return losses * weights.to(dtype=losses.dtype), chosen_rewards, rejected_rewards
+            # Trainer averages per-example losses. Normalize weights so that this
+            # becomes a weighted mean instead of increasing gradient scale when
+            # a batch happens to contain high-weight examples.
+            normalized_weights = weights.to(dtype=losses.dtype) / weights.mean().clamp_min(torch.finfo(losses.dtype).eps)
+            return losses * normalized_weights, chosen_rewards, rejected_rewards
 else:
     class AntiDPOTrainer:  # type: ignore[no-redef]
         def __init__(self, *args, **kwargs):

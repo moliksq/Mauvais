@@ -41,3 +41,12 @@ writes readable `run.log` events, a `failure.txt` traceback on errors, evaluatio
 metrics before/after training, deterministic samples before/after, checkpoint files,
 and LR-LoRA stable-rank profiles before/after. The default 200 steps is chosen for a
 T4; use `MAX_STEPS = -1` in the notebook for a full epoch.
+
+The LR-LoRA run is a memory-conscious experimental variant: `N=8` sinc bases over
+`[-2, 2]`. The supplied paper's larger default (`N=50`, `[-3, 3]`) is not used on a
+free T4. Treat the run as an ablation against LoRA, not a reproduction claim.
+
+LR-LoRA initializes sinc amplitudes and `B` to zero, so the first gradient step
+learns the transfer function before the low-rank factors receive a signal. This
+matches the supplied paper's zero-update initialization and keeps the initial model
+identical to the base checkpoint.
