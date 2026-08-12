@@ -25,6 +25,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from anti_dpo_trainer import AntiDPODataCollator, AntiDPOTrainer
 from lr_lora import LearnableRankLoRALinear
+from tokenization import tokenize_preference_dataset
 
 
 TARGET_SUFFIXES = {"q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"}
@@ -168,13 +169,15 @@ def main() -> None:
         fp16, bf16, precision = choose_precision(args.precision)
         logger.write(f"starting anti-DPO | adapter={args.adapter_type} | precision={precision} | gpu={torch.cuda.get_device_name(0)}")
         logger.write(f"config={json.dumps(vars(args), ensure_ascii=False, sort_keys=True)}")
-        dataset = load_from_disk(args.dataset_path)
-        if set(dataset) != {"train", "test"} or "anti_weight" not in dataset["train"].column_names:
+        raw_dataset = load_from_disk(args.dataset_path)
+        if set(raw_dataset) != {"train", "test"} or "anti_weight" not in raw_dataset["train"].column_names:
             raise ValueError("dataset must contain train/test splits and an anti_weight column")
-        logger.write(f"dataset train={len(dataset['train'])} test={len(dataset['test'])}")
+        logger.write(f"dataset train={len(raw_dataset['train'])} test={len(raw_dataset['test'])}")
 
         tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
         tokenizer.pad_token = tokenizer.pad_token or tokenizer.eos_token
+        tokenized_dataset = tokenize_preference_dataset(raw_dataset, tokenizer, args.max_length, args.max_prompt_length)
+        logger.write("dataset tokenization completed")
         base_model = AutoModelForCausalLM.from_pretrained(args.model_name, torch_dtype=torch.float16, trust_remote_code=True)
         base_model.config.use_cache = False
         if args.adapter_type == "lora":
@@ -231,11 +234,11 @@ def main() -> None:
             args=config,
             processing_class=tokenizer,
             data_collator=AntiDPODataCollator(pad_token_id=tokenizer.pad_token_id),
-            train_dataset=dataset["train"],
-            eval_dataset=dataset["test"],
+            train_dataset=tokenized_dataset["train"],
+            eval_dataset=tokenized_dataset["test"],
             callbacks=[ReadableMetricsCallback(logger)],
         )
-        samples = dataset["test"].select(range(min(args.sample_count, len(dataset["test"]))))
+        samples = raw_dataset["test"].select(range(min(args.sample_count, len(raw_dataset["test"]))))
         if args.adapter_type == "lr_lora":
             (output_dir / "lr_lora_rank_before.json").write_text(json.dumps(lr_lora_rank_snapshot(model), indent=2), encoding="utf-8")
         logger.write("evaluating before training")

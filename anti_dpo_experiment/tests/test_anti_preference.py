@@ -4,8 +4,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from datasets import Dataset
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from anti_preference import anti_preference_weight, invert_preference_pairs, load_jsonl_pairs
+from tokenization import tokenize_preference_dataset
+
+
+class TinyTokenizer:
+    eos_token_id = 99
+    pad_token_id = 0
+
+    def __call__(self, text, add_special_tokens, truncation, max_length):
+        ids = [ord(char) % 50 + 1 for char in text][:max_length]
+        if add_special_tokens:
+            ids = ([77] + ids)[:max_length]
+        return {"input_ids": ids, "attention_mask": [1] * len(ids)}
 
 
 class TestAntiPreference(unittest.TestCase):
@@ -25,3 +39,20 @@ class TestAntiPreference(unittest.TestCase):
             rows, report = load_jsonl_pairs(path)
         self.assertEqual(rows, [])
         self.assertEqual(report.rows_skipped_missing_fields, 1)
+
+    def test_explicit_tokenization_preserves_dpo_collator_contract(self):
+        dataset = {"train": Dataset.from_list([{"prompt": "P", "chosen": "A", "rejected": "B", "anti_weight": 1.2}])}
+        tokenized = tokenize_preference_dataset(dataset, TinyTokenizer(), max_length=8, max_prompt_length=4)
+        self.assertEqual(
+            set(tokenized["train"].column_names),
+            {
+                "prompt_input_ids",
+                "prompt_attention_mask",
+                "chosen_input_ids",
+                "chosen_attention_mask",
+                "rejected_input_ids",
+                "rejected_attention_mask",
+                "anti_weight",
+            },
+        )
+        self.assertEqual(tokenized["train"][0]["anti_weight"], 1.2)
