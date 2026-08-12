@@ -34,3 +34,10 @@ For Colab, open `colab/01_prepare_and_audit_colab.ipynb` or
 `colab/02_train_anti_dpo_colab.ipynb` directly from GitHub. Both clone
 `https://github.com/moliksq/Mauvais.git`; the prepared dataset is committed in
 `data/russian_qa`, while the raw `train.jsonl` is committed one level above.
+
+`colab/03_full_anti_dpo_experiment.ipynb` runs the complete comparison: standard
+LoRA and experimental LR-LoRA each receive the same anti-DPO training budget. It
+writes readable `run.log` events, a `failure.txt` traceback on errors, evaluation
+metrics before/after training, deterministic samples before/after, checkpoint files,
+and LR-LoRA stable-rank profiles before/after. The default 200 steps is chosen for a
+T4; use `MAX_STEPS = -1` in the notebook for a full epoch.

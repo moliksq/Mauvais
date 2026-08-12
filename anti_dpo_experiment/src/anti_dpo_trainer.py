@@ -16,7 +16,10 @@ if torch is not None:
     class AntiDPODataCollator(DPODataCollatorWithPadding):
         def __call__(self, features):
             weights = torch.tensor([feature["anti_weight"] for feature in features], dtype=torch.float32)
-            batch = super().__call__(features)
+            # TRL's padding collator only understands tokenized DPO fields. Keep
+            # the scalar multiplier out of that code path and restore it after.
+            dpo_features = [{key: value for key, value in feature.items() if key != "anti_weight"} for feature in features]
+            batch = super().__call__(dpo_features)
             batch["anti_weight"] = weights
             return batch
 

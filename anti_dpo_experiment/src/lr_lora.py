@@ -48,11 +48,17 @@ if torch is not None:
             nn.init.kaiming_uniform_(self.lora_a, a=math.sqrt(5))
 
         def forward(self, value: torch.Tensor) -> torch.Tensor:
-            update = F.linear(F.linear(value, self.lora_a), self.lora_b)
-            return self.base(value) + self.scaling * self.nonlinearity(update)
+            # LR-LoRA applies phi to the materialized weight update, as in the
+            # supplied paper: Delta W = phi(BA), rather than phi(xBA).
+            update = self.effective_update
+            return self.base(value) + F.linear(value, update)
+
+        @property
+        def effective_update(self) -> torch.Tensor:
+            return self.scaling * self.nonlinearity(self.lora_b @ self.lora_a)
 
         def stable_rank(self) -> torch.Tensor:
-            update = self.scaling * self.nonlinearity(self.lora_b @ self.lora_a).float()
+            update = self.effective_update.float()
             singular_values = torch.linalg.svdvals(update)
             return update.square().sum() / singular_values.square().max().clamp_min(1e-12)
 else:
