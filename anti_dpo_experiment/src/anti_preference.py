@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import random
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import median
@@ -115,3 +117,36 @@ def invert_preference_pairs(
         }
         for row in rows
     ]
+
+
+def normalized_prompt_key(prompt: str) -> str:
+    """Normalize only superficial prompt variation for a group-disjoint split."""
+
+    return re.sub(r"\s+", " ", prompt).strip().casefold()
+
+
+def group_disjoint_split(rows: list[dict[str, Any]], test_size: float, seed: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split whole normalized-prompt groups so duplicate prompts cannot leak."""
+
+    if not 0 < test_size < 1:
+        raise ValueError("test_size must be between 0 and 1")
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(normalized_prompt_key(str(row["prompt"])), []).append(row)
+    if len(groups) < 2:
+        raise ValueError("at least two distinct normalized prompts are required for a group-disjoint split")
+    group_keys = list(groups)
+    random.Random(seed).shuffle(group_keys)
+    target_test_rows = max(1, round(len(rows) * test_size))
+    test_keys: set[str] = set()
+    test_rows = 0
+    for key in group_keys:
+        if test_rows >= target_test_rows:
+            break
+        test_keys.add(key)
+        test_rows += len(groups[key])
+    test = [row for row in rows if normalized_prompt_key(str(row["prompt"])) in test_keys]
+    train = [row for row in rows if normalized_prompt_key(str(row["prompt"])) not in test_keys]
+    if not train or not test:
+        raise ValueError("group-disjoint split produced an empty train or test split")
+    return train, test

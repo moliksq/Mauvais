@@ -7,9 +7,11 @@ def format_user_prompt(tokenizer, prompt: str) -> str:
     """Format an instruction prompt using the model's chat template when available."""
 
     if hasattr(tokenizer, "apply_chat_template") and getattr(tokenizer, "chat_template", None):
-        return tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True
-        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        except TypeError:
+            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     return prompt
 
 

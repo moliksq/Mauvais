@@ -50,3 +50,13 @@ LR-LoRA initializes sinc amplitudes and `B` to zero, so the first gradient step
 learns the transfer function before the low-rank factors receive a signal. This
 matches the supplied paper's zero-update initialization and keeps the initial model
 identical to the base checkpoint.
+
+For behavior imitation rather than pairwise-only optimization, use
+`colab/04_sft_then_anti_dpo.ipynb`. It trains LoRA in two stages on the same split:
+SFT on source `rejected`, then anti-DPO with the frozen SFT adapter as reference.
+It builds a fresh group-disjoint split from the committed raw JSONL, masks SFT loss
+on prompt tokens, disables Qwen thinking mode, and saves deterministic generation
+samples after the base, SFT, and final stages for direct review. The source `rejected`
+field includes dismissive, inaccurate, and unsafe examples; the notebook filters only
+very short targets by default, so treat it as a style experiment rather than an
+alignment or quality-improvement recipe.
