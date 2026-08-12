@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from importlib.metadata import PackageNotFoundError, version
+
 import torch
 from datasets import load_from_disk
 from peft import LoraConfig, get_peft_model
@@ -95,6 +97,21 @@ def choose_precision(requested: str) -> tuple[bool, bool, str]:
     return True, False, "fp16"
 
 
+def validate_torchao_installation() -> None:
+    """Fail early with a direct Colab remediation rather than a PEFT internals trace."""
+
+    try:
+        installed = version("torchao")
+    except PackageNotFoundError:
+        return
+    major_minor = tuple(int(part) for part in installed.split(".")[:2])
+    if major_minor < (0, 16):
+        raise RuntimeError(
+            f"torchao=={installed} is incompatible with the installed PEFT version. "
+            "Run `pip uninstall -y torchao`, then rerun the Colab setup cell."
+        )
+
+
 def freeze_model(model) -> None:
     for parameter in model.parameters():
         parameter.requires_grad_(False)
@@ -147,6 +164,7 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     logger = TeeLogger(output_dir)
     try:
+        validate_torchao_installation()
         fp16, bf16, precision = choose_precision(args.precision)
         logger.write(f"starting anti-DPO | adapter={args.adapter_type} | precision={precision} | gpu={torch.cuda.get_device_name(0)}")
         logger.write(f"config={json.dumps(vars(args), ensure_ascii=False, sort_keys=True)}")
