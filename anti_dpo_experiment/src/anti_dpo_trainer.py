@@ -13,6 +13,15 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 
 
 if torch is not None:
+    _TOKENIZED_DPO_COLUMNS = {
+        "prompt_input_ids",
+        "prompt_attention_mask",
+        "chosen_input_ids",
+        "chosen_attention_mask",
+        "rejected_input_ids",
+        "rejected_attention_mask",
+    }
+
     class AntiDPODataCollator(DPODataCollatorWithPadding):
         def __call__(self, features):
             weights = torch.tensor([feature["anti_weight"] for feature in features], dtype=torch.float32)
@@ -26,6 +35,19 @@ if torch is not None:
 
     class AntiDPOTrainer(DPOTrainer):
         """Standard DPO with a per-example anti-preference multiplier."""
+
+        def _prepare_dataset(self, dataset, processing_class, args, dataset_name):
+            """Do not ask recent TRL releases to preprocess an already tokenized split.
+
+            The custom collator requires ``anti_weight`` alongside token fields, so
+            preparation is performed explicitly by ``tokenize_preference_dataset``.
+            TRL otherwise tries to remove raw ``chosen``/``rejected`` columns that
+            no longer exist.
+            """
+
+            if _TOKENIZED_DPO_COLUMNS.issubset(dataset.column_names):
+                return dataset
+            return super()._prepare_dataset(dataset, processing_class, args, dataset_name)
 
         def get_batch_loss_metrics(self, model, batch, train_eval="train"):
             if "anti_weight" not in batch:
