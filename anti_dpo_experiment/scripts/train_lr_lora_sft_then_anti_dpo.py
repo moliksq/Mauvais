@@ -140,13 +140,22 @@ def rank_snapshot(model) -> dict[str, float]:
 
 def generate(model, tokenizer, rows, path: Path, max_new_tokens: int, max_prompt_length: int):
     model.eval(); device = next(model.parameters()).device; records = []
-    for row in rows:
+    previous_use_cache = getattr(model.config, "use_cache", None)
+    model.config.use_cache = True
+    print(f"generation started: {len(rows)} prompts x {max_new_tokens} max tokens", flush=True)
+    for index, row in enumerate(rows, start=1):
+        print(f"generation {index}/{len(rows)}", flush=True)
         prompt = format_user_prompt(tokenizer, row["prompt"])
         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt_length, add_special_tokens=False).to(device)
         with torch.inference_mode():
-            output = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False,
-                                    repetition_penalty=1.08, pad_token_id=tokenizer.pad_token_id,
-                                    eos_token_id=tokenizer.eos_token_id)
+            output = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                repetition_penalty=1.08,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
         completion = tokenizer.decode(output[0, inputs["input_ids"].shape[1]:], skip_special_tokens=True)
         completion_ids = output[0, inputs["input_ids"].shape[1]:]
         token_ids = completion_ids.tolist()
@@ -164,6 +173,8 @@ def generate(model, tokenizer, rows, path: Path, max_new_tokens: int, max_prompt
             record["penalized_source_chosen"] = row["rejected"]
         records.append(record)
     path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+    if previous_use_cache is not None:
+        model.config.use_cache = previous_use_cache
     model.train(); return records
 
 
