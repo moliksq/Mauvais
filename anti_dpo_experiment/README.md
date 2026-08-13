@@ -60,3 +60,11 @@ samples after the base, SFT, and final stages for direct review. The source `rej
 field includes dismissive, inaccurate, and unsafe examples; the notebook filters only
 very short targets by default, so treat it as a style experiment rather than an
 alignment or quality-improvement recipe.
+
+For the custom learnable-rank variant, use
+`colab/05_lr_lora_sft_then_anti_dpo.ipynb`. It runs the same SFT -> anti-DPO loop
+with the experimental LR-LoRA projection modules, records stable-rank snapshots,
+and saves portable `lr_lora_adapter.pt` plus reconstruction metadata. Standard
+Trainer checkpoints are disabled because they would serialize the frozen base model
+inside every custom-module checkpoint. The default pilot is intentionally short
+(100 SFT and 50 anti-DPO steps) and disables length weighting for a clean comparison.
