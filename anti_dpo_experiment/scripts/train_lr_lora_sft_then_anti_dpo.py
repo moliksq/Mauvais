@@ -127,6 +127,9 @@ def build_model(name: str, args, trainable: bool):
         # the computation graph before they reach the trainable adapters.
         if hasattr(model, "enable_input_require_grads"):
             model.enable_input_require_grads()
+    # Base samples are generated before a Trainer exists, so Trainer cannot move
+    # this custom model for us. Keep both policy and reference placement explicit.
+    model.to(torch.device("cuda"))
     return model, modules
 
 
@@ -140,6 +143,8 @@ def rank_snapshot(model) -> dict[str, float]:
 
 def generate(model, tokenizer, rows, path: Path, max_new_tokens: int, max_prompt_length: int):
     model.eval(); device = next(model.parameters()).device; records = []
+    if device.type != "cuda":
+        raise RuntimeError(f"LR-LoRA generation requires CUDA, but model is on {device}")
     previous_use_cache = getattr(model.config, "use_cache", None)
     model.config.use_cache = True
     print(f"generation started: {len(rows)} prompts x {max_new_tokens} max tokens", flush=True)
@@ -207,6 +212,7 @@ def main():
             dpo = {k: v.map(lambda row: {"anti_weight": 1.0}) for k, v in dpo.items()}
         model, modules = build_model(args.model_name, args, trainable=True)
         samples = data["test"].select(range(min(args.sample_count, len(data["test"]))))
+        logger.write(f"policy device={next(model.parameters()).device} | allocated={torch.cuda.memory_allocated() / 2**30:.2f} GiB")
         base_records = generate(model, tokenizer, samples, out / "samples_base.jsonl", args.max_new_tokens, args.max_prompt_length)
         trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         logger.write(f"LR-LoRA trainable_parameters={trainable_parameters} | adapted_modules={len(modules)}")
@@ -231,6 +237,7 @@ def main():
         del sft_trainer; gc.collect(); torch.cuda.empty_cache()
         reference, _ = build_model(args.model_name, args, trainable=False)
         load_lr_lora_adapter(reference, sft_ckpt, device="cpu")
+        logger.write(f"reference device={next(reference.parameters()).device} | allocated={torch.cuda.memory_allocated() / 2**30:.2f} GiB")
         dpo_args = DPOConfig(output_dir=str(out / "anti_dpo"), max_steps=args.dpo_max_steps,
                              learning_rate=args.dpo_learning_rate, beta=args.beta, max_length=args.max_length,
                              max_prompt_length=args.max_prompt_length, **common)
